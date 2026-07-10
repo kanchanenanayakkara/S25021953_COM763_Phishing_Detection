@@ -1,4 +1,6 @@
 import pickle
+import re
+from urllib.parse import urlparse
 
 import streamlit as st
 
@@ -13,10 +15,10 @@ st.set_page_config(
 
 
 @st.cache_resource
-def load_model_files():
+def load_deployment_files():
     """
-    Load the trained Logistic Regression model,
-    feature order and phishing classification threshold.
+    Load the model, feature order, classification threshold,
+    and popular-domain reference list.
     """
     with open("url_model.pkl", "rb") as model_file:
         model = pickle.load(model_file)
@@ -27,23 +29,55 @@ def load_model_files():
     with open("url_threshold.pkl", "rb") as threshold_file:
         threshold = pickle.load(threshold_file)
 
-    return model, feature_order, threshold
+    with open("top_domains.pkl", "rb") as domains_file:
+        popular_domains = set(pickle.load(domains_file))
+
+    return model, feature_order, threshold, popular_domains
+
+
+def extract_hostname(url):
+    """
+    Extract and normalise the hostname for the popularity check.
+    """
+    cleaned_url = url.strip()
+
+    if not re.match(
+        r"^[a-zA-Z][a-zA-Z0-9+.-]*://",
+        cleaned_url
+    ):
+        cleaned_url = "https://" + cleaned_url
+
+    parsed_url = urlparse(cleaned_url)
+
+    hostname = (
+        parsed_url.hostname or ""
+    ).lower().strip(".")
+
+    if hostname.startswith("www."):
+        hostname = hostname[4:]
+
+    return hostname
 
 
 try:
-    model, feature_order, phishing_threshold = load_model_files()
+    (
+        model,
+        feature_order,
+        phishing_threshold,
+        popular_domains
+    ) = load_deployment_files()
 
 except FileNotFoundError:
     st.error(
-        "One or more deployment files could not be found. "
-        "Ensure url_model.pkl, url_features.pkl and "
-        "url_threshold.pkl are available in the repository."
+        "A required deployment file is missing. Ensure that "
+        "url_model.pkl, url_features.pkl, url_threshold.pkl, "
+        "and top_domains.pkl are available in the repository."
     )
     st.stop()
 
 except Exception as error:
     st.error(
-        f"The model files could not be loaded: {error}"
+        f"The deployment files could not be loaded: {error}"
     )
     st.stop()
 
@@ -52,16 +86,15 @@ st.title("🔐 Phishing URL Detection System")
 
 st.write(
     """
-    Enter a complete website URL below. The application
-    automatically extracts lexical and structural URL features
-    and uses a trained Logistic Regression model to classify
-    the URL as phishing or legitimate.
+    Enter a complete website URL below. The system analyses
+    lexical and structural characteristics of the URL using a
+    Logistic Regression model.
     """
 )
 
 st.info(
-    "This system analyses the URL text only. It does not visit, "
-    "download or inspect the submitted website."
+    "The application analyses URL text only. It does not open, "
+    "download, or inspect the submitted website."
 )
 
 url_input = st.text_input(
@@ -69,13 +102,14 @@ url_input = st.text_input(
     placeholder="https://www.example.com"
 )
 
-predict_button = st.button(
+analyse_button = st.button(
     "Analyse URL",
     type="primary",
     use_container_width=True
 )
 
-if predict_button:
+
+if analyse_button:
 
     if not url_input.strip():
         st.warning("Please enter a website URL.")
@@ -87,56 +121,88 @@ if predict_button:
                 feature_order
             )
 
+            hostname = extract_hostname(url_input)
+
+            if not hostname:
+                raise ValueError(
+                    "The submitted URL does not contain "
+                    "a valid hostname."
+                )
+
             probabilities = model.predict_proba(
                 input_features
             )[0]
 
             probability_by_class = dict(
-                zip(
-                    model.classes_,
-                    probabilities
-                )
+                zip(model.classes_, probabilities)
             )
 
-            phishing_probability = float(
+            phishing_score = float(
                 probability_by_class.get(0, 0)
             )
 
-            legitimate_probability = float(
+            legitimate_score = float(
                 probability_by_class.get(1, 0)
             )
 
-            # Apply the saved phishing threshold, currently 0.30
-            prediction = (
-                0
-                if phishing_probability >= phishing_threshold
-                else 1
+            model_flags_phishing = (
+                phishing_score >= phishing_threshold
             )
 
-            st.subheader("Prediction Result")
+            popular_domain_signal = (
+                hostname in popular_domains
+            )
 
-            if prediction == 0:
-                st.error(
-                    "⚠️ Prediction: Phishing URL"
+            st.subheader("Analysis Result")
+
+            if model_flags_phishing and popular_domain_signal:
+                st.warning(
+                    "⚠️ Conflicting signals — manual review required"
                 )
+
+                st.write(
+                    "The hostname appears in the popular-domain "
+                    "reference list, but the URL structure received "
+                    "a high phishing score. This may happen with "
+                    "long search, tracking, or authentication URLs."
+                )
+
+            elif model_flags_phishing:
+                st.error(
+                    "🚨 Result: Likely phishing"
+                )
+
             else:
                 st.success(
-                    "✅ Prediction: Legitimate URL"
+                    "✅ Result: Likely legitimate"
                 )
 
             col1, col2 = st.columns(2)
 
             with col1:
                 st.metric(
-                    "Phishing probability",
-                    f"{phishing_probability:.2%}"
+                    "Model phishing score",
+                    f"{phishing_score:.2%}"
                 )
 
             with col2:
                 st.metric(
-                    "Legitimate probability",
-                    f"{legitimate_probability:.2%}"
+                    "Model legitimate score",
+                    f"{legitimate_score:.2%}"
                 )
+
+            st.write(
+                f"**Hostname analysed:** `{hostname}`"
+            )
+
+            st.write(
+                "**Popular-domain signal:** "
+                + (
+                    "Recognised"
+                    if popular_domain_signal
+                    else "Not recognised"
+                )
+            )
 
             with st.expander(
                 "View extracted URL features"
@@ -149,9 +215,10 @@ if predict_button:
                 )
 
             st.caption(
-                "The prediction is produced by a machine-learning "
-                "model and should not be treated as a guarantee. "
-                "New or unusual URLs may be misclassified."
+                "The displayed scores are model outputs, not proof "
+                "that a website is safe or malicious. Popular-domain "
+                "membership is an additional signal only and does "
+                "not guarantee that every page is trustworthy."
             )
 
         except ValueError as error:
@@ -159,7 +226,7 @@ if predict_button:
 
         except Exception as error:
             st.error(
-                "An unexpected prediction error occurred: "
+                "An unexpected analysis error occurred: "
                 f"{error}"
             )
 
@@ -171,6 +238,7 @@ st.markdown(
     **Model:** Logistic Regression  
     **Input:** 14 lexical and structural URL features  
     **Phishing threshold:** {phishing_threshold:.2f}  
-    **Output:** Phishing or legitimate prediction
+    **Safety layer:** Popular-domain conflict detection  
+    **Possible outputs:** Likely legitimate, likely phishing, or manual review
     """
 )
