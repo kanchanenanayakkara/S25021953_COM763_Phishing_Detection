@@ -15,7 +15,8 @@ st.set_page_config(
 @st.cache_resource
 def load_model_files():
     """
-    Load the trained model and exact model feature order.
+    Load the trained Logistic Regression model,
+    feature order and phishing classification threshold.
     """
     with open("url_model.pkl", "rb") as model_file:
         model = pickle.load(model_file)
@@ -23,23 +24,26 @@ def load_model_files():
     with open("url_features.pkl", "rb") as feature_file:
         feature_order = pickle.load(feature_file)
 
-    return model, feature_order
+    with open("url_threshold.pkl", "rb") as threshold_file:
+        threshold = pickle.load(threshold_file)
+
+    return model, feature_order, threshold
 
 
 try:
-    model, feature_order = load_model_files()
+    model, feature_order, phishing_threshold = load_model_files()
 
 except FileNotFoundError:
     st.error(
-        "The model files could not be found. "
-        "Ensure url_model.pkl and url_features.pkl "
-        "are available in the repository."
+        "One or more deployment files could not be found. "
+        "Ensure url_model.pkl, url_features.pkl and "
+        "url_threshold.pkl are available in the repository."
     )
     st.stop()
 
 except Exception as error:
     st.error(
-        f"The model could not be loaded: {error}"
+        f"The model files could not be loaded: {error}"
     )
     st.stop()
 
@@ -50,8 +54,8 @@ st.write(
     """
     Enter a complete website URL below. The application
     automatically extracts lexical and structural URL features
-    and uses a trained Decision Tree model to classify the URL
-    as phishing or legitimate.
+    and uses a trained Logistic Regression model to classify
+    the URL as phishing or legitimate.
     """
 )
 
@@ -83,10 +87,6 @@ if predict_button:
                 feature_order
             )
 
-            prediction = int(
-                model.predict(input_features)[0]
-            )
-
             probabilities = model.predict_proba(
                 input_features
             )[0]
@@ -104,6 +104,13 @@ if predict_button:
 
             legitimate_probability = float(
                 probability_by_class.get(1, 0)
+            )
+
+            # Apply the saved phishing threshold, currently 0.30
+            prediction = (
+                0
+                if phishing_probability >= phishing_threshold
+                else 1
             )
 
             st.subheader("Prediction Result")
@@ -144,7 +151,7 @@ if predict_button:
             st.caption(
                 "The prediction is produced by a machine-learning "
                 "model and should not be treated as a guarantee. "
-                "New or unusual phishing URLs may be misclassified."
+                "New or unusual URLs may be misclassified."
             )
 
         except ValueError as error:
@@ -160,9 +167,10 @@ if predict_button:
 st.divider()
 
 st.markdown(
-    """
-    **Model:** Decision Tree  
+    f"""
+    **Model:** Logistic Regression  
     **Input:** 14 lexical and structural URL features  
+    **Phishing threshold:** {phishing_threshold:.2f}  
     **Output:** Phishing or legitimate prediction
     """
 )
