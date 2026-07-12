@@ -1,5 +1,5 @@
-streamlit
+streamlit==1.59.1
 pandas
-scikit-learn
 numpy
-tldextract
+scikit-learn==1.6.1
+tldextract==5.3.1
