@@ -505,21 +505,21 @@ if analyse_button:
                 )
 
             # Display extracted features
-           with st.expander(
-    "View extracted URL features"
-):
-    feature_lines = []
+            with st.expander(
+                "View extracted URL features"
+            ):
+                feature_lines = []
 
-    for feature in feature_order:
-        value = input_features.iloc[0][feature]
-        feature_lines.append(
-            f"{feature}: {value}"
-        )
+                for feature in feature_order:
+                    value = input_features.iloc[0][feature]
+                    feature_lines.append(
+                        f"{feature}: {value}"
+                    )
 
-    st.code(
-        "\n".join(feature_lines),
-        language=None
-    )
+                st.code(
+                    "\n".join(feature_lines),
+                    language=None
+                )
 
             st.caption(
                 "Scores are machine-learning outputs, not proof "
