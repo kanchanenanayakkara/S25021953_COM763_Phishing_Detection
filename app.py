@@ -259,7 +259,7 @@ url_input = st.text_input(
 analyse_button = st.button(
     "Analyse URL",
     type="primary",
-    use_container_width=True
+    width="stretch"
 )
 
 
@@ -505,15 +505,21 @@ if analyse_button:
                 )
 
             # Display extracted features
-            with st.expander(
-                "View extracted URL features"
-            ):
-                st.dataframe(
-                    input_features.T.rename(
-                        columns={0: "Value"}
-                    ),
-                    use_container_width=True
-                )
+           with st.expander(
+    "View extracted URL features"
+):
+    feature_lines = []
+
+    for feature in feature_order:
+        value = input_features.iloc[0][feature]
+        feature_lines.append(
+            f"{feature}: {value}"
+        )
+
+    st.code(
+        "\n".join(feature_lines),
+        language=None
+    )
 
             st.caption(
                 "Scores are machine-learning outputs, not proof "
